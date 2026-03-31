@@ -12,13 +12,14 @@ void loop() {
   // Matikan LED 
   digitalWrite(ledPin, LOW); 
   delay(timeDelay); 
+
+  // Baru ubah delay (setelah 1 siklus kedip) 
+  if (timeDelay <= 100) { 
+    delay(3000);        
+    // jeda sebelum reset 
+    timeDelay = 1000;   // reset ke awal 
+    } else { 
+    timeDelay -= 100;   // percepatan bertahap 
+  } 
 } 
 
-// Baru ubah delay (setelah 1 siklus kedip) 
-if (timeDelay <= 100) { 
-  delay(3000);        
-  // jeda sebelum reset 
-  timeDelay = 1000;   // reset ke awal 
-  } else { 
-  timeDelay -= 100;   // percepatan bertahap 
-} 
