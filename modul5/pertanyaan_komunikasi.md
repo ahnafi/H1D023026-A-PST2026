@@ -1,19 +1,90 @@
 # Pertanyaan Komunikasi Task
 
-1. Jelaskan perbedaan antara loop() pada Arduino biasa dengan sistem yang menggunakan RTOS!
+1. Apakah kedua task berjalan secara bersamaan atau bergantian? Jelaskan mekanismenya!
 
 Jawaban :
 
-> Pada Arduino biasa tanpa RTOS, fungsi `loop()` menjadi pusat eksekusi dan berjalan terus menerus secara sekuensial, sehingga semua logika program harus diatur manual termasuk delay dan pembagian waktu antar proses. Pada sistem dengan FreeRTOS, `loop()` tidak digunakan karena eksekusi diatur oleh scheduler yang menjalankan banyak task secara terpisah dan terstruktur. Setiap task memiliki fungsi sendiri dan dapat berjalan bergantian berdasarkan prioritas dan timing, sehingga sistem lebih modular dan responsif dibanding pendekatan satu loop tunggal.
+> Task berjalan bergantian, bukan benar benar bersamaan, karena hanya ada satu CPU. Scheduler pada FreeRTOS membagi waktu eksekusi ke tiap task dengan teknik time slicing dan prioritas. Saat satu task delay atau menunggu queue, task lain langsung dijalankan sehingga terlihat seperti paralel.
 
-2. Mengapa fungsi loop() dibiarkan kosong?
+2. Apakah program ini berpotensi mengalami race condition? Jelaskan!
 
-Jawaban : 
+Jawaban :
 
->  Fungsi loop() dibiarkan kosong karena setelah vTaskStartScheduler() dipanggil, seluruh eksekusi program diambil alih oleh scheduler dari FreeRTOS. Semua logika sudah dipindahkan ke dalam task, sehingga tidak ada lagi kode yang perlu dijalankan secara berulang di loop(). Jika loop() tetap diisi, kode tersebut tidak akan pernah dieksekusi karena sistem terus menjalankan task yang sudah dijadwalkan.
+> Program ini tidak berpotensi race condition karena komunikasi antar task menggunakan queue dari FreeRTOS. Queue bekerja sebagai mekanisme sinkronisasi yang menjamin hanya satu task mengakses data pada satu waktu saat proses kirim atau terima. Selama tidak ada variabel global yang diakses langsung tanpa proteksi, eksekusi tetap aman dan konsisten.
 
-3. Apa insight utama yang Anda pelajari dari praktikum ini?
+3. Modifikasilah program dengan menggunakan sensor DHT sesungguhnya sehingga informasi yang ditampilkan dinamis. Bagaimana hasilnya?
 
-Jawaban : 
+Jawaban :
 
-> Insight utama: RTOS memecah program menjadi task terpisah sehingga eksekusi lebih terstruktur dan tidak bergantung pada satu loop(). Mekanisme vTaskDelay membuat task bergantian berjalan tanpa saling blocking, sehingga sistem tetap responsif. Penggunaan queue menunjukkan cara komunikasi antar task yang aman, karena data dikirim terkontrol tanpa konflik akses.
+> modifikasi menggunakan sensor DHT11 pada pin digital 2. Data suhu dan kelembapan dibaca nyata lalu dikirim lewat queue.
+
+```cpp
+#include <Arduino_FreeRTOS.h>
+#include <queue.h>
+#include <DHT.h>
+
+#define DHTPIN 2
+#define DHTTYPE DHT11
+
+DHT dht(DHTPIN, DHTTYPE);
+
+// struktur data
+struct readings {
+  float temp;
+  float h;
+};
+
+QueueHandle_t my_queue;
+
+// deklarasi task
+void read_data(void *pvParameters);
+void display(void *pvParameters);
+
+void setup() {
+  Serial.begin(9600);
+  dht.begin();
+
+  my_queue = xQueueCreate(1, sizeof(struct readings));
+
+  xTaskCreate(read_data, "ReadDHT", 128, NULL, 1, NULL);
+  xTaskCreate(display, "Display", 128, NULL, 1, NULL);
+
+  vTaskStartScheduler();
+}
+
+void loop() {}
+
+// task baca sensor DHT
+void read_data(void *pvParameters) {
+  struct readings x;
+
+  for (;;) {
+    x.temp = dht.readTemperature();
+    x.h = dht.readHumidity();
+
+    // kirim ke queue jika valid
+    if (!isnan(x.temp) && !isnan(x.h)) {
+      xQueueSend(my_queue, &x, portMAX_DELAY);
+    }
+
+    vTaskDelay(2000 / portTICK_PERIOD_MS);
+  }
+}
+
+// task tampilkan data
+void display(void *pvParameters) {
+  struct readings x;
+
+  for (;;) {
+    if (xQueueReceive(my_queue, &x, portMAX_DELAY) == pdPASS) {
+      Serial.print("Temp = ");
+      Serial.print(x.temp);
+      Serial.println(" C");
+
+      Serial.print("Humidity = ");
+      Serial.print(x.h);
+      Serial.println(" %");
+    }
+  }
+}
+```
